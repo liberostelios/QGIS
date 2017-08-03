@@ -107,75 +107,114 @@ void Tessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight
   QgsVertexId::VertexType vt;
   QgsPoint pt;
 
-  std::list<cgalPoint> L;
+  // Find the best fitting plane
+  std::list<Kernel::Point_3> pointsInPolygon;
   for ( int i = 0; i < exterior->numPoints() - 1; ++i )
   {
     exterior->pointAt( i, pt, vt );
 
-    L.push_front(cgalPoint(pt.x() - originX, pt.y() - originY, pt.z()));
-
-//    p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
-//    polyline.push_back( pt2 );
-//    float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
-//    z[pt2] = zPt;
+    pointsInPolygon.push_back(Kernel::Point_3(pt.x() - originX, pt.y() - originY, pt.z()));
   }
-  polylinesToDelete << polyline;
 
-  cgalTriangulation T(L.begin(), L.end());
-
-//  p2t::CDT *cdt = new p2t::CDT( polyline );
-
-  // polygon holes
-//  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
-//  {
-//    std::vector<p2t::Point *> holePolyline;
-//    holePolyline.reserve( exterior->numPoints() );
-//    const QgsCurve *hole = polygon.interiorRing( i );
-//    for ( int j = 0; j < hole->numPoints() - 1; ++j )
-//    {
-//      hole->pointAt( j, pt, vt );
-//      p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
-//      holePolyline.push_back( pt2 );
-//      float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
-//      z[pt2] = zPt;
-//    }
-//    cdt->AddHole( holePolyline );
-//    polylinesToDelete << holePolyline;
-//  }
-
-  // TODO: robustness (no duplicate / nearly duplicate points, ...)
-
-//  cdt->Triangulate();
-
-//  std::vector<p2t::Triangle *> triangles = cdt->GetTriangles();
-
-  for (cgalFinite_facets_iterator fit = T.finite_facets_begin(); fit != T.finite_facets_end(); ++fit)
+  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
   {
-      cgalTriangle tri = T.triangle(*fit);
-      for (int i = 0; i < 3; ++i)
-      {
-        data << tri.vertex(i).x() << tri.vertex(i).z() << -tri.vertex(i).y();
-        if ( addNormals )
-          data << 0.f << 1.f << 0.f;
-      }
+    std::vector<p2t::Point *> holePolyline;
+    holePolyline.reserve( exterior->numPoints() );
+    const QgsCurve *hole = polygon.interiorRing( i );
+    for ( int j = 0; j < hole->numPoints() - 1; ++j )
+    {
+      hole->pointAt( j, pt, vt );
+      pointsInPolygon.push_back(Kernel::Point_3(pt.x() - originX, pt.y() - originY, pt.z()));
+    }
   }
 
-//  for ( size_t i = 0; i < triangles.size(); ++i )
-//  {
-//    p2t::Triangle *t = triangles[i];
-//    for ( int j = 0; j < 3; ++j )
-//    {
-//      p2t::Point *p = t->GetPoint( j );
-//      float zPt = z[p];
-//      data << p->x << extrusionHeight + zPt << -p->y;
-//      if ( addNormals )
-//        data << 0.f << 1.f << 0.f;
-//    }
-//  }
+  Kernel::Plane_3 bestPlane;
+  linear_least_squares_fitting_3(pointsInPolygon.begin(), pointsInPolygon.end(), bestPlane, CGAL::Dimension_tag<0>());
 
-//  delete cdt;
-  for ( int i = 0; i < polylinesToDelete.count(); ++i )
-    qDeleteAll( polylinesToDelete[i] );
+  // Triangulate the projection of the edges to the plane
+  Triangulation triangulation;
+  QgsPointSequence listOfPoints;
+  exterior->points(listOfPoints);
+  QList<QgsPoint>::iterator currentPoint = listOfPoints.begin();
+  Triangulation::Vertex_handle currentVertex = triangulation.insert(bestPlane.to_2d(Kernel::Point_3(currentPoint->x() - originX, currentPoint->y() - originY, currentPoint->z())));
+  ++currentPoint;
+  Triangulation::Vertex_handle previousVertex;
+  while (currentPoint != listOfPoints.end()) {
+    previousVertex = currentVertex;
+    currentVertex = triangulation.insert(bestPlane.to_2d(Kernel::Point_3(currentPoint->x() - originX, currentPoint->y() - originY, currentPoint->z())));
+    if (previousVertex != currentVertex) triangulation.insert_constraint(previousVertex, currentVertex);
+    ++currentPoint;
+  }
+
+  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
+  {
+    const QgsCurve *hole = polygon.interiorRing( i );
+    hole->points(listOfPoints);
+    if (listOfPoints.size() < 4) {
+      std::cout << "\tRing with < 4 points! Skipping..." << std::endl;
+      continue;
+    }
+
+    currentPoint = listOfPoints.begin();
+    currentVertex = triangulation.insert(bestPlane.to_2d(Kernel::Point_3(currentPoint->x() - originX, currentPoint->y() - originY, currentPoint->z())));
+    while (currentPoint != listOfPoints.end()) {
+      previousVertex = currentVertex;
+      currentVertex = triangulation.insert(bestPlane.to_2d(Kernel::Point_3(currentPoint->x() - originX, currentPoint->y() - originY, currentPoint->z())));
+      if (previousVertex != currentVertex) triangulation.insert_constraint(previousVertex, currentVertex);
+      ++currentPoint;
+    }
+  }
+
+  // Label the triangles to find out interior/exterior
+  if (triangulation.number_of_faces() == 0) {
+//      std::cout << "Degenerate face produced no triangles. Skipping..." << std::endl;
+    return;
+  }
+
+  for (Triangulation::All_faces_iterator currentFace = triangulation.all_faces_begin(); currentFace != triangulation.all_faces_end(); ++currentFace) {
+    currentFace->info() = std::pair<bool, bool>(false, false);
+  }
+
+  std::list<Triangulation::Face_handle> toCheck;
+  triangulation.infinite_face()->info() = std::pair<bool, bool>(true, false);
+  CGAL_assertion(triangulation.infinite_face()->info().first == true);
+  CGAL_assertion(triangulation.infinite_face()->info().second == false);
+  toCheck.push_back(triangulation.infinite_face());
+
+  while (!toCheck.empty()) {
+    CGAL_assertion(toCheck.front()->info().first);
+    for (int neighbour = 0; neighbour < 3; ++neighbour) {
+      if (toCheck.front()->neighbor(neighbour)->info().first) {
+        // Note: validation code. But here we assume that some triangulations will be invalid anyway.
+//          if (triangulation.is_constrained(Triangulation::Edge(toCheck.front(), neighbour))) CGAL_assertion(toCheck.front()->neighbor(neighbour)->info().second != toCheck.front()->info().second);
+//          else CGAL_assertion(toCheck.front()->neighbor(neighbour)->info().second == toCheck.front()->info().second);
+      } else {
+        toCheck.front()->neighbor(neighbour)->info().first = true;
+        CGAL_assertion(toCheck.front()->neighbor(neighbour)->info().first == true);
+        if (triangulation.is_constrained(Triangulation::Edge(toCheck.front(), neighbour))) {
+          toCheck.front()->neighbor(neighbour)->info().second = !toCheck.front()->info().second;
+          toCheck.push_back(toCheck.front()->neighbor(neighbour));
+        } else {
+          toCheck.front()->neighbor(neighbour)->info().second = toCheck.front()->info().second;
+          toCheck.push_back(toCheck.front()->neighbor(neighbour));
+        }
+      }
+    }
+
+    toCheck.pop_front();
+  }
+
+  // Project the triangles back to 3D and add
+  for (Triangulation::Finite_faces_iterator currentFace = triangulation.finite_faces_begin(); currentFace != triangulation.finite_faces_end(); ++currentFace) {
+    if (currentFace->info().second) {
+      for (unsigned int currentVertexIndex = 0; currentVertexIndex < 3; ++currentVertexIndex) {
+        Kernel::Point_3 point3 = bestPlane.to_3d(currentFace->vertex(currentVertexIndex)->point());
+        data << point3.x() << point3.z() << -point3.y();
+        if ( addNormals )
+          data << bestPlane.orthogonal_vector().x() << bestPlane.orthogonal_vector().z() << -bestPlane.orthogonal_vector().y();
+      }
+    }
+  }
 
   // add walls if extrusion is enabled
   if ( extrusionHeight != 0 )
