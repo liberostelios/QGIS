@@ -99,7 +99,7 @@ void Tessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight
   const QgsCurve *exterior = polygon.exteriorRing();
 
   QList< std::vector<p2t::Point *> > polylinesToDelete;
-  QHash<p2t::Point *, float> z;
+//  QHash<p2t::Point *, float> z;
 
   std::vector<p2t::Point *> polyline;
   polyline.reserve( exterior->numPoints() );
@@ -107,56 +107,73 @@ void Tessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight
   QgsVertexId::VertexType vt;
   QgsPoint pt;
 
+  std::list<cgalPoint> L;
   for ( int i = 0; i < exterior->numPoints() - 1; ++i )
   {
     exterior->pointAt( i, pt, vt );
-    p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
-    polyline.push_back( pt2 );
-    float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
-    z[pt2] = zPt;
+
+    L.push_front(cgalPoint(pt.x() - originX, pt.y() - originY, pt.z()));
+
+//    p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
+//    polyline.push_back( pt2 );
+//    float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
+//    z[pt2] = zPt;
   }
   polylinesToDelete << polyline;
 
-  p2t::CDT *cdt = new p2t::CDT( polyline );
+  cgalTriangulation T(L.begin(), L.end());
+
+//  p2t::CDT *cdt = new p2t::CDT( polyline );
 
   // polygon holes
-  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
-  {
-    std::vector<p2t::Point *> holePolyline;
-    holePolyline.reserve( exterior->numPoints() );
-    const QgsCurve *hole = polygon.interiorRing( i );
-    for ( int j = 0; j < hole->numPoints() - 1; ++j )
-    {
-      hole->pointAt( j, pt, vt );
-      p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
-      holePolyline.push_back( pt2 );
-      float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
-      z[pt2] = zPt;
-    }
-    cdt->AddHole( holePolyline );
-    polylinesToDelete << holePolyline;
-  }
+//  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
+//  {
+//    std::vector<p2t::Point *> holePolyline;
+//    holePolyline.reserve( exterior->numPoints() );
+//    const QgsCurve *hole = polygon.interiorRing( i );
+//    for ( int j = 0; j < hole->numPoints() - 1; ++j )
+//    {
+//      hole->pointAt( j, pt, vt );
+//      p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
+//      holePolyline.push_back( pt2 );
+//      float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
+//      z[pt2] = zPt;
+//    }
+//    cdt->AddHole( holePolyline );
+//    polylinesToDelete << holePolyline;
+//  }
 
   // TODO: robustness (no duplicate / nearly duplicate points, ...)
 
-  cdt->Triangulate();
+//  cdt->Triangulate();
 
-  std::vector<p2t::Triangle *> triangles = cdt->GetTriangles();
+//  std::vector<p2t::Triangle *> triangles = cdt->GetTriangles();
 
-  for ( size_t i = 0; i < triangles.size(); ++i )
+  for (cgalFinite_facets_iterator fit = T.finite_facets_begin(); fit != T.finite_facets_end(); ++fit)
   {
-    p2t::Triangle *t = triangles[i];
-    for ( int j = 0; j < 3; ++j )
-    {
-      p2t::Point *p = t->GetPoint( j );
-      float zPt = z[p];
-      data << p->x << extrusionHeight + zPt << -p->y;
-      if ( addNormals )
-        data << 0.f << 1.f << 0.f;
-    }
+      cgalTriangle tri = T.triangle(*fit);
+      for (int i = 0; i < 3; ++i)
+      {
+        data << tri.vertex(i).x() << tri.vertex(i).z() << -tri.vertex(i).y();
+        if ( addNormals )
+          data << 0.f << 1.f << 0.f;
+      }
   }
 
-  delete cdt;
+//  for ( size_t i = 0; i < triangles.size(); ++i )
+//  {
+//    p2t::Triangle *t = triangles[i];
+//    for ( int j = 0; j < 3; ++j )
+//    {
+//      p2t::Point *p = t->GetPoint( j );
+//      float zPt = z[p];
+//      data << p->x << extrusionHeight + zPt << -p->y;
+//      if ( addNormals )
+//        data << 0.f << 1.f << 0.f;
+//    }
+//  }
+
+//  delete cdt;
   for ( int i = 0; i < polylinesToDelete.count(); ++i )
     qDeleteAll( polylinesToDelete[i] );
 

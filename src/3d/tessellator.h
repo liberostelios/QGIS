@@ -5,6 +5,16 @@ class QgsPolygonV2;
 
 #include <QVector>
 
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Triangulation_3.h>
+
+typedef CGAL::Exact_predicates_inexact_constructions_kernel cgalK;
+typedef CGAL::Triangulation_3<cgalK>      cgalTriangulation;
+typedef cgalTriangulation::Finite_facets_iterator cgalFinite_facets_iterator;
+typedef cgalTriangulation::Locate_type    cgalLocate_type;
+typedef cgalTriangulation::Point          cgalPoint;
+typedef cgalTriangulation::Triangle       cgalTriangle;
+
 class Tessellator
 {
   public:

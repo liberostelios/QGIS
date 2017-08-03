@@ -168,6 +168,25 @@ IF (NOT ANDROID)
     )
 ENDIF (NOT ANDROID)
 
+# CGAL
+find_package( CGAL COMPONENTS )
+
+if ( NOT CGAL_FOUND )
+  message(SEND_ERROR "This requires the CGAL library")
+  return()
+endif()
+
+#find_package(GMP REQUIRED)
+
+# include helper file
+include( ${CGAL_USE_FILE} )
+
+find_library(GMP_LIBRARY NAMES gmp libgmp)
+
+include_directories( ${CGAL_INCLUDE_DIR} ${CGAL_3RD_PARTY_INCLUDE_DIR})
+
+TARGET_LINK_LIBRARIES(qgis_3d ${CGAL_LIBRARIES} ${CGAL_3RD_PARTY_LIBRARIES} ${GMP_LIBRARY})
+
 TARGET_LINK_LIBRARIES(qgis_3d qgis_core)
 
 # clang-tidy
