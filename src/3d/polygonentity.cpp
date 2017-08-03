@@ -8,6 +8,8 @@
 
 #include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DRender/QGeometryRenderer>
+#include <Qt3DRender/QRenderStateSet>
+#include <Qt3DRender/QCullFace>
 #include <Qt3DCore/QTransform>
 
 #include "qgsvectorlayer.h"
@@ -26,6 +28,10 @@ PolygonEntity::PolygonEntity( const Map3D &map, QgsVectorLayer *layer, const Pol
   material->setSpecular( symbol.material.specular() );
   material->setShininess( symbol.material.shininess() );
   addComponent( material );
+  Qt3DRender::QRenderStateSet* set = new Qt3DRender::QRenderStateSet(material);
+  Qt3DRender::QCullFace* cullFace = new Qt3DRender::QCullFace;
+  cullFace->setMode(Qt3DRender::QCullFace::NoCulling);
+  set->addRenderState(cullFace);
 
   QList<QgsPolygonV2 *> polygons;
   QgsFeature f;

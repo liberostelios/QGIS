@@ -32,7 +32,7 @@ Scene::Scene( const Map3D &map, Qt3DExtras::QForwardRenderer *defaultFrameGraph,
 {
 
   connect( &map, &Map3D::backgroundColorChanged, this, &Scene::onBackgroundColorChanged );
-  onBackgroundColorChanged();
+  onBackgroundColorChanged();  
 
   // TODO: strange - setting OnDemand render policy still keeps QGIS busy (Qt 5.9.0)
   // actually it is more busy than with the default "Always" policy although there are no changes in the scene.

@@ -209,9 +209,10 @@ void Tessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight
     if (currentFace->info().second) {
       for (unsigned int currentVertexIndex = 0; currentVertexIndex < 3; ++currentVertexIndex) {
         Kernel::Point_3 point3 = bestPlane.to_3d(currentFace->vertex(currentVertexIndex)->point());
-        data << point3.x() << point3.z() << -point3.y();
-        if ( addNormals )
+        data << point3.x() << point3.z() + 0.01 << -point3.y();
+        if ( addNormals ) {
           data << bestPlane.orthogonal_vector().x() << bestPlane.orthogonal_vector().z() << -bestPlane.orthogonal_vector().y();
+        }
       }
     }
   }
