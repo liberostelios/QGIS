@@ -6,6 +6,9 @@
 #include <Qt3DExtras/QForwardRenderer>
 #include <Qt3DExtras/QSkyboxEntity>
 #include <Qt3DLogic/QFrameAction>
+#include <Qt3DRender/QCullFace>
+#include <Qt3DRender/QRenderStateSet>
+#include <Qt3DRender/QFrontFace>
 
 #include <QTimer>
 
@@ -34,6 +37,15 @@ Scene::Scene( const Map3D &map, Qt3DExtras::QForwardRenderer *defaultFrameGraph,
   connect( &map, &Map3D::backgroundColorChanged, this, &Scene::onBackgroundColorChanged );
   onBackgroundColorChanged();
 
+  Qt3DRender::QRenderStateSet* set = new
+  Qt3DRender::QRenderStateSet(mForwardRenderer->childNodes()[0]->childNodes()[0]->childNodes()[0]);
+  Qt3DRender::QDepthTest* depthTest = new Qt3DRender::QDepthTest;
+  depthTest->setDepthFunction(Qt3DRender::QDepthTest::LessOrEqual);
+  Qt3DRender::QCullFace* cullFace = new Qt3DRender::QCullFace;
+  cullFace->setMode(Qt3DRender::QCullFace::NoCulling);
+  set->addRenderState(cullFace);
+  set->addRenderState(depthTest);
+
   // TODO: strange - setting OnDemand render policy still keeps QGIS busy (Qt 5.9.0)
   // actually it is more busy than with the default "Always" policy although there are no changes in the scene.
   //renderSettings->setRenderPolicy( Qt3DRender::QRenderSettings::OnDemand );
@@ -57,7 +69,6 @@ Scene::Scene( const Map3D &map, Qt3DExtras::QForwardRenderer *defaultFrameGraph,
   mCameraController->setViewport( viewportRect );
   mCameraController->setCamera( camera );
   mCameraController->resetView();
-
   // create terrain entity
 
   createTerrain();
