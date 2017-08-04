@@ -8,7 +8,7 @@
 #include <Qt3DLogic/QFrameAction>
 #include <Qt3DRender/QCullFace>
 #include <Qt3DRender/QRenderStateSet>
-#include <Qt3DRender/QDepthTest>
+#include <Qt3DRender/QFrontFace>
 
 #include <QTimer>
 
@@ -40,7 +40,10 @@ Scene::Scene( const Map3D &map, Qt3DExtras::QForwardRenderer *defaultFrameGraph,
   Qt3DRender::QRenderStateSet* set = new
   Qt3DRender::QRenderStateSet(mForwardRenderer->childNodes()[0]->childNodes()[0]->childNodes()[0]);
   Qt3DRender::QDepthTest* depthTest = new Qt3DRender::QDepthTest;
-  depthTest->set(Qt3DRender::QDepthTest::Always);
+  depthTest->setDepthFunction(Qt3DRender::QDepthTest::LessOrEqual);
+  Qt3DRender::QCullFace* cullFace = new Qt3DRender::QCullFace;
+  cullFace->setMode(Qt3DRender::QCullFace::NoCulling);
+  set->addRenderState(cullFace);
   set->addRenderState(depthTest);
 
   // TODO: strange - setting OnDemand render policy still keeps QGIS busy (Qt 5.9.0)
