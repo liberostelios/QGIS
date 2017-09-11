@@ -1,5 +1,6 @@
 #############################################################
 # sources
+FIND_PACKAGE(GSL REQUIRED)
 
 SET(QGIS_3D_SRCS
 
@@ -124,9 +125,11 @@ INCLUDE_DIRECTORIES(
 )
 INCLUDE_DIRECTORIES(SYSTEM
   ${PROJ_INCLUDE_DIR}
+  ${GSL_INCLUDE_DIR}
   ${GEOS_INCLUDE_DIR}
   ${GDAL_INCLUDE_DIR}
   ${SQLITE3_INCLUDE_DIR}
+  ${GSL_INCLUDE_DIRS}
 )
 
 #############################################################
@@ -180,7 +183,9 @@ IF (NOT ANDROID)
     )
 ENDIF (NOT ANDROID)
 
-TARGET_LINK_LIBRARIES(qgis_3d qgis_core)
+add_compile_options(-lgsl)
+
+TARGET_LINK_LIBRARIES(qgis_3d qgis_core ${GSL_LIBRARIES})
 
 # clang-tidy
 IF(CLANG_TIDY_EXE)
