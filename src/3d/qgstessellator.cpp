@@ -13,8 +13,6 @@
 
 #include <QVector3D>
 
-#include <iostream>
-
 static void make_quad( float x0, float y0, float x1, float y1, float zLow, float zHigh, QVector<float> &data, bool addNormals )
 {
   float dx = x1 - x0;
@@ -99,32 +97,6 @@ static void _makeWalls( const QgsCurve &ring, bool ccw, float extrusionHeight, Q
   }
 }
 
-static QgsPoint cross_product( const QgsPoint u, const QgsPoint v)
-{
-  QgsPoint result;
-
-  result.setX(u.y() * v.z() - u.z() * v.y());
-  result.setY(u.z() * v.x() - u.x() * v.z());
-  result.addZValue(u.x() * v.y() - u.y() * v.x());
-
-  return result;
-}
-
-static double dot_product( const QgsPoint u, const QgsPoint v)
-{
-    return u.x() * v.x() + u.y() * v.y() + u.z() * v.z();
-}
-
-static QgsPoint multiply( const QgsPoint p, const double factor )
-{
-    return QgsPoint(p.x() * factor, p.y() * factor, p.z() * factor);
-}
-
-static QgsPoint add( const QgsPoint p1, const QgsPoint p2)
-{
-    return QgsPoint(p1.x() + p2.x(), p1.y() + p2.y(), p1.z() + p2.z());
-}
-
 void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight )
 {
   const QgsCurve *exterior = polygon.exteriorRing();
@@ -136,7 +108,7 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
   polyline.reserve( exterior->numPoints() );
 
   QgsVertexId::VertexType vt;
-  QgsPoint pt, ptPrev;
+  QgsPoint pt, ptPrev, ptFirst;
 
   // Compute the best fitting plane
   gsl_matrix *X, *cov;
@@ -148,48 +120,84 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
 
   c = gsl_vector_alloc(3);
   cov = gsl_matrix_alloc(3, 3);
-
   for ( int i = 0; i < exterior->numPoints() - 1; ++i )
   {
     exterior->pointAt( i, pt, vt );
-    gsl_matrix_set(X, i, 0, pt.x() - originX);
-    gsl_matrix_set(X, i, 1, pt.y() - originY);
+    gsl_matrix_set(X, i, 0, pt.x());
+    gsl_matrix_set(X, i, 1, pt.y());
     gsl_matrix_set(X, i, 2, 1);
 
     gsl_vector_set(y, i, qIsNaN( pt.z() ) ? 0 : pt.z());
+
+    if (i == 0)
+    {
+      ptFirst = pt;
+    }
   }
 
   gsl_multifit_linear_workspace *work = gsl_multifit_linear_alloc(exterior->numPoints() - 1, 3);
   gsl_multifit_linear(X, y, c, cov, &chisq, work);
+
+  bool switchPlane = chisq > 0.001;
+
+  if (switchPlane)
+  {
+      for ( int i = 0; i < exterior->numPoints() - 1; ++i )
+      {
+        exterior->pointAt( i, pt, vt );
+        gsl_matrix_set(X, i, 0, pt.x());
+        gsl_matrix_set(X, i, 1, qIsNaN( pt.z() ) ? 0 : pt.z());
+        gsl_matrix_set(X, i, 2, 1);
+
+        gsl_vector_set(y, i, pt.y());
+      }
+
+      gsl_multifit_linear_workspace *work = gsl_multifit_linear_alloc(exterior->numPoints() - 1, 3);
+      gsl_multifit_linear(X, y, c, cov, &chisq, work);
+  }
   gsl_multifit_linear_free(work);
 
   double pa, pb, pc, pd;
 
 #define C(i) (gsl_vector_get(c, (i)))
 
-  pa = C(0);
-  pb = C(1);
-  pc = -1;
-  pd = C(2);
+  if (switchPlane)
+  {
+      pa = C(0);
+      pb = -1;
+      pc = C(1);
+      pd = C(2);
+  }
+  else
+  {
+      pa = C(0);
+      pb = C(1);
+      pc = -1;
+      pd = C(2);
+  }
 
-  QgsPoint pNormal(pa, -pb, pc), pOrigin(0, 0, pd), pXVector(1, 0, pa);
-  QgsPoint pYVector = cross_product(pNormal, pXVector);
-  pYVector.setY(-pYVector.y());
-  pNormal = multiply(pNormal, 1.0f / pNormal.distance3D(0, 0, 0));
-  pXVector = multiply(pXVector, 1.0f / pXVector.distance3D(0, 0, 0));
-  pYVector = multiply(pYVector, 1.0f / pYVector.distance3D(0, 0, 0));
-  p2t::Point *ptFirst = new p2t::Point();
-
-  std::cout << "Doing cdt for: ";
+  QVector3D pNormal(pa, pb, pc), pOrigin(ptFirst.x(), ptFirst.y(), ptFirst.z()), pXVector;
+  if (pc > 0.001 || pc < -0.001)
+  {
+      pXVector = QVector3D(1, 0, -pa/pc);
+  }
+  else
+  {
+      pXVector = QVector3D(1, -pa/pb, 0);
+  }
+  QVector3D pYVector = QVector3D::normal(pNormal, pXVector);
+  pYVector.setY(pYVector.y());
+  pNormal.normalize();
+  pXVector.normalize();
 
   for ( int i = 0; i < exterior->numPoints() - 1; ++i )
   {
     exterior->pointAt( i, pt, vt );
     if ( i == 0 || pt != ptPrev )
     {
-      QgsPoint tempPt( pt.x() - originX - pOrigin.x(), pt.y() - originY - pOrigin.y(), (qIsNaN( pt.z() ) ? 0 : pt.z()) - pOrigin.z() );
-      double x = dot_product(tempPt, pXVector);
-      double y = dot_product(tempPt, pYVector);
+      QVector3D tempPt( pt.x(), pt.y(), (qIsNaN( pt.z() ) ? 0 : pt.z()) );
+      float x = QVector3D::dotProduct(tempPt - pOrigin, pXVector);
+      float y = QVector3D::dotProduct(tempPt - pOrigin, pYVector);
 
       p2t::Point *pt2 = new p2t::Point( x, y );
       bool found = false;
@@ -198,29 +206,23 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
           if (*pt2 == **it)
           {
               found = true;
-              std::cout << "XXXX - FOUND a duplicate!";
-              return;
           }
       }
-      if (pt2->x != ptFirst->x && pt2->y != ptFirst->y)
+
+      if (found)
       {
-        polyline.push_back( pt2 );
+          continue;
       }
 
-      if ( i == 0 )
-      {
-        ptFirst = pt2;
-      }
+      polyline.push_back(pt2);
 
       float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
       z[pt2] = zPt;
 
-      std::cout << tempPt << " | ";
     }
     ptPrev = pt;
   }
   polylinesToDelete << polyline;
-  std::cout << std::endl << std::flush;
 
   p2t::CDT *cdt = new p2t::CDT( polyline );
 
@@ -248,6 +250,28 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
 
   // TODO: robustness (no nearly duplicate points, invalid geometries ...)
 
+  if (polyline.size() == 3)
+  {
+      for (std::vector<p2t::Point*>::iterator it = polyline.begin(); it != polyline.end(); it++)
+      {
+          p2t::Point *p = *it;
+          double zPt = z[p];
+          QVector3D nPoint = pOrigin + pXVector * p->x + pYVector * p->y;
+          double fx = nPoint.x() - originX;
+          double fy = nPoint.y() - originY;
+          double fz = extrusionHeight + (qIsNaN(zPt) ? 0 : zPt);
+          data << fx << fz << -fy;
+          if ( addNormals )
+            data << pNormal.x() << pNormal.z() << - pNormal.y();
+      }
+
+      return;
+  }
+  else if (polyline.size() < 3)
+  {
+      return;
+  }
+
   cdt->Triangulate();
 
   std::vector<p2t::Triangle *> triangles = cdt->GetTriangles();
@@ -259,13 +283,13 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
     {
       p2t::Point *p = t->GetPoint( j );
       double zPt = z[p];
-      QgsPoint nPoint = add(add(pOrigin, multiply(pXVector, p->x)), multiply(pYVector, p->y));
-      double fx = nPoint.x();
-      double fy = nPoint.y();
+      QVector3D nPoint = pOrigin + pXVector * p->x + pYVector * p->y;
+      double fx = nPoint.x() - originX;
+      double fy = nPoint.y() - originY;
       double fz = extrusionHeight + (qIsNaN(zPt) ? 0 : zPt);
       data << fx << fz << -fy;
       if ( addNormals )
-        data << 0.f << 1.f << 0.f;
+        data << -pNormal.x() << -pNormal.z() << pNormal.y();
     }
   }
 
