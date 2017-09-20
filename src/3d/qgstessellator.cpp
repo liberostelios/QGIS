@@ -108,93 +108,50 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
   polyline.reserve( exterior->numPoints() );
 
   QgsVertexId::VertexType vt;
-  QgsPoint pt, ptPrev, ptFirst;
+  QgsPoint pt, ptFirst;
+  QVector3D pPrev, pCur;
 
-  // Compute the best fitting plane
-  gsl_matrix *X, *cov;
-  gsl_vector *y, *c;
-  double chisq;
-
-  X = gsl_matrix_alloc(exterior->numPoints() - 1, 3);
-  y = gsl_vector_alloc(exterior->numPoints() - 1);
-
-  c = gsl_vector_alloc(3);
-  cov = gsl_matrix_alloc(3, 3);
-  for ( int i = 0; i < exterior->numPoints() - 1; ++i )
+  QVector3D pNormal(0, 0, 0);
+  int pCount = exterior->numPoints();
+  for (int i = 0; i < pCount - 1; i++)
   {
-    exterior->pointAt( i, pt, vt );
-    gsl_matrix_set(X, i, 0, pt.x());
-    gsl_matrix_set(X, i, 1, pt.y());
-    gsl_matrix_set(X, i, 2, 1);
+    QgsPoint pt1, pt2;
+    exterior->pointAt(i, pt1, vt);
+    exterior->pointAt((i + 1) % pCount, pt2, vt);
+    ptFirst = pt1;
 
-    gsl_vector_set(y, i, qIsNaN( pt.z() ) ? 0 : pt.z());
+    pNormal.setX(pNormal.x() + (pt1.y() - pt2.y()) * (pt1.z() + pt2.z()));
+    pNormal.setY(pNormal.y() + (pt1.z() - pt2.z()) * (pt1.x() + pt2.x()));
+    pNormal.setZ(pNormal.z() + (pt1.x() - pt2.x()) * (pt1.y() + pt2.y()));
 
-    if (i == 0)
-    {
-      ptFirst = pt;
-    }
   }
 
-  gsl_multifit_linear_workspace *work = gsl_multifit_linear_alloc(exterior->numPoints() - 1, 3);
-  gsl_multifit_linear(X, y, c, cov, &chisq, work);
+  pNormal.normalize();
 
-  bool switchPlane = chisq > 0.001;
-
-  if (switchPlane)
+  if (pNormal.length() < 0.999 || pNormal.length() > 1.001)
   {
-      for ( int i = 0; i < exterior->numPoints() - 1; ++i )
-      {
-        exterior->pointAt( i, pt, vt );
-        gsl_matrix_set(X, i, 0, pt.x());
-        gsl_matrix_set(X, i, 1, qIsNaN( pt.z() ) ? 0 : pt.z());
-        gsl_matrix_set(X, i, 2, 1);
-
-        gsl_vector_set(y, i, pt.y());
-      }
-
-      gsl_multifit_linear_workspace *work = gsl_multifit_linear_alloc(exterior->numPoints() - 1, 3);
-      gsl_multifit_linear(X, y, c, cov, &chisq, work);
+      return;
   }
-  gsl_multifit_linear_free(work);
 
-  double pa, pb, pc, pd;
-
-#define C(i) (gsl_vector_get(c, (i)))
-
-  if (switchPlane)
+  QVector3D pOrigin(ptFirst.x(), ptFirst.y(), ptFirst.z()), pXVector;
+  if (pNormal.z() > 0.001 || pNormal.z() < -0.001)
   {
-      pa = C(0);
-      pb = -1;
-      pc = C(1);
-      pd = C(2);
+      pXVector = QVector3D(1, 0, -pNormal.x()/pNormal.z());
+  }
+  else if (pNormal.y() > 0.001 || pNormal.y() < -0.001)
+  {
+      pXVector = QVector3D(1, -pNormal.x()/pNormal.y(), 0);
   }
   else
   {
-      pa = C(0);
-      pb = C(1);
-      pc = -1;
-      pd = C(2);
-  }
-
-  QVector3D pNormal(pa, pb, pc), pOrigin(ptFirst.x(), ptFirst.y(), ptFirst.z()), pXVector;
-  if (pc > 0.001 || pc < -0.001)
-  {
-      pXVector = QVector3D(1, 0, -pa/pc);
-  }
-  else
-  {
-      pXVector = QVector3D(1, -pa/pb, 0);
+      pXVector = QVector3D(-pNormal.y() / pNormal.x(), 1, 0);
   }
   QVector3D pYVector = QVector3D::normal(pNormal, pXVector);
-  pYVector.setY(pYVector.y());
-  pNormal.normalize();
   pXVector.normalize();
 
   for ( int i = 0; i < exterior->numPoints() - 1; ++i )
   {
     exterior->pointAt( i, pt, vt );
-    if ( i == 0 || pt != ptPrev )
-    {
       QVector3D tempPt( pt.x(), pt.y(), (qIsNaN( pt.z() ) ? 0 : pt.z()) );
       float x = QVector3D::dotProduct(tempPt - pOrigin, pXVector);
       float y = QVector3D::dotProduct(tempPt - pOrigin, pYVector);
@@ -219,10 +176,11 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
       float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
       z[pt2] = zPt;
 
-    }
-    ptPrev = pt;
   }
   polylinesToDelete << polyline;
+
+  if (polyline.size() < 3)
+      return;
 
   p2t::CDT *cdt = new p2t::CDT( polyline );
 
@@ -265,10 +223,6 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
             data << pNormal.x() << pNormal.z() << - pNormal.y();
       }
 
-      return;
-  }
-  else if (polyline.size() < 3)
-  {
       return;
   }
 
