@@ -109,7 +109,6 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
 
   QgsVertexId::VertexType vt;
   QgsPoint pt, ptFirst;
-  QVector3D pPrev, pCur;
 
   QVector3D pNormal(0, 0, 0);
   int pCount = exterior->numPoints();
@@ -226,7 +225,13 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
       return;
   }
 
-  cdt->Triangulate();
+  try {
+    cdt->Triangulate();
+  }
+  catch (...)
+  {
+    return;
+  }
 
   std::vector<p2t::Triangle *> triangles = cdt->GetTriangles();
 
@@ -243,7 +248,7 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
       double fz = extrusionHeight + (qIsNaN(zPt) ? 0 : zPt);
       data << fx << fz << -fy;
       if ( addNormals )
-        data << -pNormal.x() << -pNormal.z() << pNormal.y();
+        data << pNormal.x() << pNormal.z() << - pNormal.y();
     }
   }
 
