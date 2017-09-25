@@ -183,27 +183,44 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
 
   p2t::CDT *cdt = new p2t::CDT( polyline );
 
-//  // polygon holes
-//  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
-//  {
-//    std::vector<p2t::Point *> holePolyline;
-//    holePolyline.reserve( exterior->numPoints() );
-//    const QgsCurve *hole = polygon.interiorRing( i );
-//    for ( int j = 0; j < hole->numPoints() - 1; ++j )
-//    {
-//      hole->pointAt( j, pt, vt );
-//      if ( j == 0 || pt != ptPrev )
-//      {
-//        p2t::Point *pt2 = new p2t::Point( pt.x() - originX, pt.y() - originY );
-//        holePolyline.push_back( pt2 );
-//        float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
-//        z[pt2] = zPt;
-//      }
-//      ptPrev = pt;
-//    }
-//    cdt->AddHole( holePolyline );
-//    polylinesToDelete << holePolyline;
-//  }
+  // polygon holes
+  for ( int i = 0; i < polygon.numInteriorRings(); ++i )
+  {
+    std::vector<p2t::Point *> holePolyline;
+    holePolyline.reserve( exterior->numPoints() );
+    const QgsCurve *hole = polygon.interiorRing( i );
+    for ( int j = 0; j < hole->numPoints() - 1; ++j )
+    {
+      hole->pointAt( j, pt, vt );
+
+      QVector3D tempPt( pt.x(), pt.y(), (qIsNaN( pt.z() ) ? 0 : pt.z()) );
+
+      float x = QVector3D::dotProduct(tempPt - pOrigin, pXVector);
+      float y = QVector3D::dotProduct(tempPt - pOrigin, pYVector);
+
+      p2t::Point *pt2 = new p2t::Point( x, y );
+      bool found = false;
+      for (std::vector<p2t::Point *>::iterator it = polyline.begin(); it != polyline.end(); it++)
+      {
+          if (*pt2 == **it)
+          {
+              found = true;
+          }
+      }
+
+      if (found)
+      {
+          continue;
+      }
+
+      holePolyline.push_back(pt2);
+
+      float zPt = qIsNaN( pt.z() ) ? 0 : pt.z();
+      z[pt2] = zPt;
+    }
+    cdt->AddHole( holePolyline );
+    polylinesToDelete << holePolyline;
+  }
 
   // TODO: robustness (no nearly duplicate points, invalid geometries ...)
 
