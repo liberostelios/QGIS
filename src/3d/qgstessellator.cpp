@@ -111,7 +111,7 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
   QgsPoint pt, ptFirst;
 
   QVector3D pNormal(0, 0, 0);
-  int pCount = exterior->numPoints();
+  int pCount = exterior->numPoints(); 
   for (int i = 0; i < pCount - 1; i++)
   {
     QgsPoint pt1, pt2;
@@ -129,6 +129,20 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
 
   if (pNormal.length() < 0.999 || pNormal.length() > 1.001)
   {
+      return;
+  }
+
+  if (pCount == 4)
+  {
+      QgsPoint pt;
+      for (int i = 0; i < 3; i++)
+      {
+          exterior->pointAt(i, pt, vt);
+          data << pt.x() - originX << pt.z() << - pt.y() + originY;
+          if ( addNormals )
+            data << pNormal.x() << pNormal.z() << - pNormal.y();
+      }
+
       return;
   }
 
