@@ -97,8 +97,9 @@ static void _makeWalls( const QgsCurve &ring, bool ccw, float extrusionHeight, Q
   }
 }
 
-void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight )
+QVector<float> QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight ) const
 {
+  QVector<float> tempdata;
   const QgsCurve *exterior = polygon.exteriorRing();
 
   QList< std::vector<p2t::Point *> > polylinesToDelete;
@@ -129,7 +130,7 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
 
   if (pNormal.length() < 0.999 || pNormal.length() > 1.001)
   {
-      return;
+      return tempdata;
   }
 
   if (pCount == 4)
@@ -138,12 +139,12 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
       for (int i = 0; i < 3; i++)
       {
           exterior->pointAt(i, pt, vt);
-          data << pt.x() - originX << pt.z() << - pt.y() + originY;
+          tempdata << pt.x() - originX << pt.z() << - pt.y() + originY;
           if ( addNormals )
-            data << pNormal.x() << pNormal.z() << - pNormal.y();
+            tempdata << pNormal.x() << pNormal.z() << - pNormal.y();
       }
 
-      return;
+      return tempdata;
   }
 
   QVector3D pOrigin(ptFirst.x(), ptFirst.y(), ptFirst.z()), pXVector;
@@ -193,7 +194,7 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
   polylinesToDelete << polyline;
 
   if (polyline.size() < 3)
-      return;
+      return tempdata;
 
   p2t::CDT *cdt = new p2t::CDT( polyline );
 
@@ -248,12 +249,12 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
           double fx = nPoint.x() - originX;
           double fy = nPoint.y() - originY;
           double fz = extrusionHeight + (qIsNaN(zPt) ? 0 : zPt);
-          data << fx << fz << -fy;
+          tempdata << fx << fz << -fy;
           if ( addNormals )
-            data << pNormal.x() << pNormal.z() << - pNormal.y();
+            tempdata << pNormal.x() << pNormal.z() << - pNormal.y();
       }
 
-      return;
+      return tempdata;
   }
 
   try {
@@ -261,7 +262,7 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
   }
   catch (...)
   {
-    return;
+    return tempdata;
   }
 
   std::vector<p2t::Triangle *> triangles = cdt->GetTriangles();
@@ -277,9 +278,9 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
       double fx = nPoint.x() - originX;
       double fy = nPoint.y() - originY;
       double fz = extrusionHeight + (qIsNaN(zPt) ? 0 : zPt);
-      data << fx << fz << -fy;
+      tempdata << fx << fz << -fy;
       if ( addNormals )
-        data << pNormal.x() << pNormal.z() << - pNormal.y();
+        tempdata << pNormal.x() << pNormal.z() << - pNormal.y();
     }
   }
 
@@ -290,9 +291,11 @@ void QgsTessellator::addPolygon( const QgsPolygonV2 &polygon, float extrusionHei
   // add walls if extrusion is enabled
   if ( extrusionHeight != 0 )
   {
-    _makeWalls( *exterior, false, extrusionHeight, data, addNormals, originX, originY );
+    _makeWalls( *exterior, false, extrusionHeight, tempdata, addNormals, originX, originY );
 
     for ( int i = 0; i < polygon.numInteriorRings(); ++i )
-      _makeWalls( *polygon.interiorRing( i ), true, extrusionHeight, data, addNormals, originX, originY );
+      _makeWalls( *polygon.interiorRing( i ), true, extrusionHeight, tempdata, addNormals, originX, originY );
   }
+
+  return tempdata;
 }

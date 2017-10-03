@@ -10,7 +10,7 @@ class QgsTessellator
   public:
     QgsTessellator( double originX, double originY, bool addNormals );
 
-    void addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight );
+    QVector<float> addPolygon( const QgsPolygonV2 &polygon, float extrusionHeight ) const;
 
     // input:
     // - origin X/Y
